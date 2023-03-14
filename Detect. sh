@@ -1,0 +1,84 @@
+#!/bin/bash
+
+# Check if the script is being run as root
+if [[ $EUID -ne 0 ]]; then
+   echo "This script must be run as root"
+   exit 1
+fi
+
+# Check if hdparm is installed
+if ! command -v hdparm &> /dev/null
+then
+    echo "hdparm is not installed. Please install hdparm and try again."
+    exit
+fi
+
+# Parse command-line options
+while getopts ":d:o:hp:csnqf" opt; do
+  case $opt in
+    d) device="$OPTARG"
+    ;;
+    o) output_file="$OPTARG"
+    ;;
+    h) check_hpa=true
+    ;;
+    p) check_dco=true
+    ;;
+    c) clear_hpa=true
+    ;;
+    s) set_hpa=true
+    ;;
+    n) disable_hpa=true
+    ;;
+    q) clear_dco=true
+    ;;
+    f) set_max_sectors=true
+    ;;
+    \?) echo "Invalid option -$OPTARG" >&2
+    ;;
+  esac
+done
+
+# Check if device or image file is accessible
+if [ ! -e "$device" ]
+then
+    echo "Device or image file not found. Please specify the correct path and try again."
+    exit
+fi
+
+# Get device information
+model=$(hdparm -I "$device" | grep "Model Number" | awk -F': ' '{print $2}')
+serial=$(hdparm -I "$device" | grep "Serial Number" | awk -F': ' '{print $2}')
+fwver=$(hdparm -I "$device" | grep "Firmware Version" | awk -F': ' '{print $2}')
+capacity=$(hdparm -I "$device" | grep "device size with M" | awk -F': ' '{print $2}')
+interface=$(hdparm -I "$device" | grep "Transport" | awk -F': ' '{print $2}')
+
+echo "Device: $model ($serial), Firmware: $fwver, Capacity: $capacity, Interface: $interface"
+
+# Check for HPA and/or DCO
+if [[ $check_hpa || $check_dco ]]; then
+  size=$(hdparm -N "$device" | grep -iE "HPA|DCO" | awk '{print $2}')
+  if [ -n "$size" ]; then
+    echo "$size detected"
+  else
+    echo "No HPA or DCO detected"
+  fi
+fi
+
+# Set or clear HPA
+if [[ $set_hpa || $clear_hpa ]]; then
+  if [[ $set_hpa ]]; then
+    echo "Setting HPA"
+    hdparm --yes-i-know-what-i-am-doing --dco-restore --dco-identify "$device"
+    hdparm --yes-i-know-what-i-am-doing --dco-restore --dco-configure "$device" -N "$set_hpa"
+  elif [[ $clear_hpa ]]; then
+    echo "Clearing HPA"
+    hdparm --yes-i-know-what-i-am-doing --dco-restore --dco-identify "$device"
+    hdparm --yes-i-know-what-i-am-doing --dco-restore --dco-configure "$device" -N $((1 << 48))
+  fi
+fi
+
+# Disable HPA
+if [[ $disable_hpa ]]; then
+  echo "Disabling HPA"
+  hdparm -N p"$device"
