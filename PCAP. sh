@@ -1,0 +1,80 @@
+#!/bin/bash
+
+# Define the command line arguments
+while getopts ":f:c:" opt; do
+  case $opt in
+    f)
+      pcap_file="$OPTARG"
+      ;;
+    c)
+      config_file="$OPTARG"
+      ;;
+    \?)
+      echo "Invalid option: -$OPTARG" >&2
+      exit 1
+      ;;
+    :)
+      echo "Option -$OPTARG requires an argument." >&2
+      exit 1
+      ;;
+  esac
+done
+
+# Check if the pcap file and config file exist
+if [ ! -f "$pcap_file" ]; then
+  echo "Error: File $pcap_file not found"
+  exit 1
+fi
+
+if [ ! -f "$config_file" ]; then
+  echo "Error: File $config_file not found"
+  exit 1
+fi
+
+# Extract fields from the pcap file and store in CSV format
+tshark_fields=$(cat "$config_file" | tr '\n' ',' | sed 's/,$//')
+if [ -z "$tshark_fields" ]; then
+  echo "Error: No fields specified in config file $config_file"
+  exit 1
+fi
+
+tshark_output=$(tshark -r "$pcap_file" -T fields -E header=y -E separator=, -E quote=d -E occurrence=f -e $tshark_fields)
+if [ -z "$tshark_output" ]; then
+  echo "Error: No data extracted from pcap file $pcap_file"
+  exit 1
+fi
+
+echo "$tshark_output" > pcap.csv
+
+# Analyze the data in the CSV file
+echo "Top source IPs:"
+awk -F "\"*,\"*" '{print $5}' pcap.csv | sort | uniq -c | sort -nr | head -n 10
+echo "Top destination IPs:"
+awk -F "\"*,\"*" '{print $6}' pcap.csv | sort | uniq -c | sort -nr | head -n 10
+echo "Top source ports:"
+awk -F "\"*,\"*" '{print $8}' pcap.csv | sort | uniq -c | sort -nr | head -n 10
+echo "Top destination ports:"
+awk -F "\"*,\"*" '{print $9}' pcap.csv | sort | uniq -c | sort -nr | head -n 10
+echo "HTTP response codes:"
+awk -F "\"*,\"*" '{print $15}' pcap.csv | sort | uniq -c | sort -nr | head -n 10
+echo "DNS A records:"
+awk -F "\"*,\"*" '{print $17}' pcap.csv | sort | uniq -c | sort -nr | head -n 10
+
+# Query VirusTotal API for potentially malicious domains
+vt_api_key="YOUR_API_KEY_HERE"
+dns_records=$(awk -F "\"*,\"*" '{print $17}' pcap.csv | sort | uniq)
+echo "Checking DNS records with VirusTotal..."
+
+for dns_record in $dns_records; do
+  if [[ "$dns_record" == *"."* ]]; then
+    response=$(curl -s -X GET "https://www.virustotal.com/api/v3/domains/$dns_record" \
+      -H "x-apikey: $vt_api_key")
+    detection=$(echo "$response" | jq -r '.data.attributes.last_analysis_stats."malicious"')
+
+    if [ "$detection" != "null" ] && [ "$detection" -gt 0 ]; then
+      echo "Potentially malicious domain found: $dns_record"
+      echo "VirusTotal detection rate: $detection/80"
+      echo "Details: https://www.virustotal.com/gui/domain/$dns_record"
+    fi
+  fi
+done
