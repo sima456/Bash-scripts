@@ -1,0 +1,4 @@
+# Configuration file for packet analysis script
+# Fields to extract from the pcap file (comma-separated)
+# Available fields: frame.number,frame.time,frame.time_delta,ip.src,ip.dst,tcp.srcport,tcp.dstport,tcp.stream,tcp.len,tcp.analysis.bytes_in_flight,http.response.code,dns.resp.name,dns.resp.type,dns.a
+fields=frame.number,frame.time,ip.src,ip.dst,tcp.srcport,tcp.dstport,tcp.stream,tcp.len,http.response.code,dns.resp.name,dns.a
