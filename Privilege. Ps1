@@ -1,0 +1,17 @@
+# Check if the user is running with elevated privileges
+if ([bool]([System.Security.Principal.WindowsIdentity]::GetCurrent().Groups | `
+    where { $_.Value -eq 'S-1-5-32-544' })) {
+    Write-Host "You are running with elevated privileges. Please log in with a standard user account."
+    
+    # Close all browser windows
+    Get-Process -Name "chrome", "firefox", "iexplore", "edge" -ErrorAction SilentlyContinue | Stop-Process -Force
+    
+    # Disable access to Gmail
+    Set-ItemProperty -Path "HKCU:\Software\Policies\Google\Chrome" -Name "DisabledPlugins" -Value "Chrome PDF Viewer"
+    Set-ItemProperty -Path "HKCU:\Software\Policies\Google\Chrome" -Name "ExtensionInstallBlacklist" -Value "1"
+    
+    Write-Host "Access to Gmail has been removed."
+}
+else {
+    Write-Host "You are not running with elevated privileges. No action is required."
+}
